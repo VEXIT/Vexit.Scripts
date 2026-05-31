@@ -9,7 +9,7 @@
 #-------------------------------------------------------------
 
 # Script to create a .NET test project for a given project with all dependencies and a dummy test
-# Usage: ./create-dotnet-unittests-project.sh [options]
+# Usage: ./create-dotnet-unittests-project.sh [options] [PROJECT_PATH] [OUTPUT_FOLDER]
 #
 # OPTIONS:
 #   -h, --help          Show this help message and exit
@@ -17,7 +17,8 @@
 # EXAMPLES:
 #   ./create-dotnet-unittests-project.sh
 #   ./create-dotnet-unittests-project.sh --help
-#   ./create-dotnet-unittests-project.sh -h
+#   ./create-dotnet-unittests-project.sh MyOrg.Project1/src
+#   ./create-dotnet-unittests-project.sh MyOrg.Project1/src MyOrg.Project1/tests
 
 set -e  # Exit on error
 
@@ -30,7 +31,7 @@ Create a complete .NET test project with all necessary dependencies, project ref
 and a dummy test file.
 
 USAGE:
-    $0 [OPTIONS] [PROJECT_PATH]
+    $0 [OPTIONS] [PROJECT_PATH] [OUTPUT_FOLDER]
 
 OPTIONS:
     -h, --help          Show this help message and exit
@@ -38,6 +39,9 @@ OPTIONS:
 ARGUMENTS:
     PROJECT_PATH        Path to the .NET project directory (optional)
                        If not provided, you will be prompted interactively
+    OUTPUT_FOLDER       Path where the test project will be created (optional)
+                       If not provided, test project is created in <parent_of_project>/<ProjectName.Tests>/
+                       Only the container folder changes; project file name remains <ProjectName>.Tests.csproj
 
 DESCRIPTION:
     This script creates a complete .NET test project with all necessary dependencies,
@@ -52,17 +56,18 @@ FEATURES:
     - Full build and test execution
 
 EXAMPLES:
-    $0                  # Run interactively
-    $0 MyProject        # Direct path to project
-    $0 ../MyProject     # Relative path
-    $0 /c/dev/MyProject # Absolute path
-    $0 --help           # Show this help
+    $0                                           # Run interactively
+    $0 MyProject                                 # Direct path to project
+    $0 MyOrg.Project1/src                        # Test project in MyOrg.Project1/MyOrg.Project1.Tests/
+    $0 MyOrg.Project1/src MyOrg.Project1/tests   # Test project in MyOrg.Project1/tests/
+    $0 --help                                    # Show this help
 
 EOF
 }
 
 # Parse command line arguments
 PROJECT_PATH=""
+OUTPUT_FOLDER=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
@@ -75,11 +80,12 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
         *)
-            # If it's not an option, treat it as the project path
             if [ -z "$PROJECT_PATH" ]; then
                 PROJECT_PATH="$1"
+            elif [ -z "$OUTPUT_FOLDER" ]; then
+                OUTPUT_FOLDER="$1"
             else
-                echo "Error: Multiple project paths provided. Only one path is allowed."
+                echo "Error: Too many arguments. Use PROJECT_PATH and optionally OUTPUT_FOLDER."
                 echo "Use '$0 --help' for usage information."
                 exit 1
             fi
@@ -129,21 +135,26 @@ echo "Found .NET C# project file: $CSPROJ_FILE"
 PROJECT_NAME="$(basename "$CSPROJ_FILE" .csproj)"
 TEST_PROJECT_NAME="${PROJECT_NAME}.Tests"
 
-# Get the directory containing the project (parent directory)
-PROJECT_PARENT_DIR="$(dirname "$ABSOLUTE_PROJECT_PATH")"
-
-# Navigate to parent directory
-cd "$PROJECT_PARENT_DIR"
-
-echo "Creating ${TEST_PROJECT_NAME} project..."
-echo "Source project: $ABSOLUTE_PROJECT_PATH"
-echo "Test project will be created in: $(pwd)/${TEST_PROJECT_NAME}"
-
-# Create test project
-dotnet new classlib --name "$TEST_PROJECT_NAME"
-
-# Navigate into test project
-cd "$TEST_PROJECT_NAME"
+# Determine test project output directory
+if [ -n "$OUTPUT_FOLDER" ]; then
+    # User specified output folder: create project contents directly inside it
+    mkdir -p "$OUTPUT_FOLDER"
+    cd "$OUTPUT_FOLDER"
+    TEST_PROJECT_DIR="$(pwd)"
+    echo "Creating ${TEST_PROJECT_NAME} project..."
+    echo "Source project: $ABSOLUTE_PROJECT_PATH"
+    echo "Test project will be created in: $TEST_PROJECT_DIR"
+    dotnet new classlib --name "$TEST_PROJECT_NAME" --output .
+else
+    # Default: create in <parent_of_project>/<ProjectName.Tests>/
+    PROJECT_PARENT_DIR="$(dirname "$ABSOLUTE_PROJECT_PATH")"
+    cd "$PROJECT_PARENT_DIR"
+    echo "Creating ${TEST_PROJECT_NAME} project..."
+    echo "Source project: $ABSOLUTE_PROJECT_PATH"
+    echo "Test project will be created in: $(pwd)/${TEST_PROJECT_NAME}"
+    dotnet new classlib --name "$TEST_PROJECT_NAME"
+    cd "$TEST_PROJECT_NAME"
+fi
 
 # Generate .gitignore file
 echo "Generating .gitignore file..."
